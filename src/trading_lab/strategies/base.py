@@ -16,3 +16,6 @@ class TradingStrategy(ABC):
 
     def on_trade_closed(self, bar: MarketBar) -> None:
         """Receive notification after a position closes."""
+
+    def on_signal_executed(self, signal: Signal) -> None:
+        """Receive notification after a signal becomes an actual position."""

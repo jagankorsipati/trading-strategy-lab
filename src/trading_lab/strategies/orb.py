@@ -80,5 +80,7 @@ class ORBStrategy(TradingStrategy):
             direction = Direction.SHORT
         if direction is None:
             return None
-        self.trades_today += 1
         return Signal(self.config.symbol, bar.timestamp, direction, bar.close)
+
+    def on_signal_executed(self, signal: Signal) -> None:
+        self.trades_today += 1

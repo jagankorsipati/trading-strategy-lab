@@ -44,6 +44,7 @@ def test_end_of_day_exit(opening_bars):
         opening_bars
         + [
             make_bar(45, 102, 103, 101, 102.5),
+            make_bar(46, 102.5, 103, 102, 102.8),
             make_bar(59, 102.5, 103, 102, 102.8, hour=15),
         ]
     )
@@ -55,6 +56,7 @@ def test_end_of_day_exit(opening_bars):
 def test_fees_affect_pnl(opening_bars):
     bars = opening_bars + [
         make_bar(45, 102, 103, 101, 102.5),
+        make_bar(46, 102.5, 103, 102.2, 102.5),
         make_bar(59, 102.5, 103, 102.2, 102.5, hour=15),
     ]
     result = run(bars, trading_fee=2.0)
@@ -66,6 +68,7 @@ def test_fees_affect_pnl(opening_bars):
 def test_slippage_affects_entry_and_exit(opening_bars):
     bars = opening_bars + [
         make_bar(45, 102, 103, 101, 102.5),
+        make_bar(46, 102.5, 103, 102.2, 102.5),
         make_bar(59, 102.5, 103, 102.2, 102.5, hour=15),
     ]
     result = run(bars, slippage_bps=10)
@@ -77,5 +80,11 @@ def test_slippage_affects_entry_and_exit(opening_bars):
 
 
 def test_truncated_data_forces_close(opening_bars):
-    result = run(opening_bars + [make_bar(45, 102, 103, 101, 102.5)])
+    result = run(
+        opening_bars
+        + [
+            make_bar(45, 102, 103, 101, 102.5),
+            make_bar(46, 102.5, 103, 102.2, 102.5),
+        ]
+    )
     assert result.trades[0].exit_reason == ExitReason.END_OF_DAY

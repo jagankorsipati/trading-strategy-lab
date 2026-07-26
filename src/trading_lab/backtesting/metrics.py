@@ -24,7 +24,11 @@ def calculate_metrics(
 
     if equity_curve:
         equities = np.array([point[1] for point in equity_curve], dtype=float)
-        peaks = np.maximum.accumulate(equities)
+        # Starting capital is an observable equity point and must remain the
+        # initial high-water mark even if the first bar immediately loses money.
+        peaks = np.maximum.accumulate(
+            np.concatenate(([float(starting_capital)], equities))
+        )[1:]
         drawdowns = np.divide(
             equities - peaks, peaks, out=np.zeros_like(equities), where=peaks != 0
         )

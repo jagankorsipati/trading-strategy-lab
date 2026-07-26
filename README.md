@@ -27,17 +27,30 @@ deterministic tests.
 
 By default, bars from 09:30 inclusive to 09:45 exclusive (US Eastern) establish
 the opening high and low. Starting with the 09:45 bar, a configured close-based
-or intrabar high/low breakout can emit a long or short signal. Entries are filled
-at the signal bar's close with configured slippage. Stops and targets are checked
-from the next bar onward. If both are touched on one bar, the stop is chosen as a
-conservative assumption. Any open position is closed on the first bar at or after
-the configured end-of-day time, and state resets each session.
+or intrabar high/low breakout can emit a long or short signal after that bar is
+complete. The signal is first executable at the next same-session bar's open,
+with configured adverse slippage. This prevents a strategy from observing a
+completed candle and also receiving its closing price.
+
+Stops and targets are checked against every bar after an opening fill, including
+the entry bar because the fill occurs at its open. If both are touched on one bar,
+the stop is chosen as a conservative assumption. A stop gapped through fills from
+the worse opening price before slippage; a target uses the configured target even
+after a favorable gap, avoiding invented price improvement. Any open position is
+closed on the first bar at or after the configured end-of-day time. If an EOD bar
+is missing, it is closed at the prior session's final available close before any
+next-session bar is processed.
 
 These conventions avoid look-ahead: a bar is processed only after all of that
 bar's OHLC data is known. This is a bar-based simulator, so it cannot reconstruct
-the sequence of prices within a candle. Position size is a fixed share quantity;
+the sequence of prices within a candle. Input timestamps are assumed to identify
+the start of each bar. Position size is a fixed share quantity;
 fees are fixed per execution and slippage is expressed in basis points. Only one
-position may be open at a time.
+position may be open at a time. Fixed quantity orders require enough equity for
+100% of notional plus the entry fee; the same conservative notional requirement
+is used for shorts. Cash is debited for long purchases and credited for short
+sale proceeds, while equity adds long market value or subtracts the short
+liability.
 
 ## Installation
 

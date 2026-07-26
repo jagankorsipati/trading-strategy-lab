@@ -15,7 +15,7 @@ from trading_lab.risk.rules import stop_and_target
 
 
 class Portfolio:
-    """Tracks fills and mark-to-market equity using collateral-neutral cash."""
+    """Tracks actual cash plus long assets or short liabilities."""
 
     def __init__(self, config: BacktestConfig) -> None:
         self.config = config
@@ -35,13 +35,16 @@ class Portfolio:
         slippage = reference * self.config.slippage_bps / 10_000
         return reference + adverse_sign * slippage, slippage
 
-    def open(self, signal: Signal) -> None:
+    def open(self, signal: Signal) -> bool:
         if self.position is not None:
             raise RuntimeError("cannot open a second position")
         price, slippage = self._fill_price(
             signal.reference_price, signal.direction, True
         )
         quantity = self._sizer.size(price, self.cash)
+        required_buying_power = price * quantity + self.config.trading_fee
+        if required_buying_power > self.equity(signal.reference_price):
+            return False
         stop, target = stop_and_target(
             price,
             signal.direction,
@@ -59,7 +62,11 @@ class Portfolio:
             self.config.trading_fee,
             slippage * quantity,
         )
-        self.cash -= self.config.trading_fee
+        notional = price * quantity
+        if signal.direction == Direction.LONG:
+            self.cash -= notional + self.config.trading_fee
+        else:
+            self.cash += notional - self.config.trading_fee
         self.executions.append(
             Execution(
                 signal.timestamp,
@@ -71,6 +78,7 @@ class Portfolio:
                 True,
             )
         )
+        return True
 
     def close(
         self, bar: MarketBar, reference_price: float, reason: ExitReason
@@ -85,7 +93,11 @@ class Portfolio:
         gross_pnl = (
             (exit_price - position.entry_price) * position.quantity * multiplier
         )
-        self.cash += gross_pnl - self.config.trading_fee
+        exit_notional = exit_price * position.quantity
+        if position.direction == Direction.LONG:
+            self.cash += exit_notional - self.config.trading_fee
+        else:
+            self.cash -= exit_notional + self.config.trading_fee
         fees = position.entry_fee + self.config.trading_fee
         trade = Trade(
             position.symbol,
@@ -127,7 +139,15 @@ class Portfolio:
             * multiplier
         )
 
+    def equity(self, close: float) -> float:
+        if self.position is None:
+            return self.cash
+        market_value = close * self.position.quantity
+        if self.position.direction == Direction.LONG:
+            return self.cash + market_value
+        return self.cash - market_value
+
     def mark(self, bar: MarketBar) -> float:
-        equity = self.cash + self.unrealized_pnl(bar.close)
+        equity = self.equity(bar.close)
         self.equity_curve.append((bar.timestamp, equity))
         return equity

@@ -41,3 +41,16 @@ def test_csv_requires_explicit_timezone(tmp_path):
     ).to_csv(path, index=False)
     with pytest.raises(ValueError, match="timezone"):
         load_csv(str(path))
+
+
+def test_non_finite_market_data_rejected():
+    bar = MarketBar(
+        datetime(2025, 1, 1, 9, 30, tzinfo=ZoneInfo("America/New_York")),
+        100,
+        float("inf"),
+        99,
+        100,
+        10,
+    )
+    with pytest.raises(ValueError, match="non-finite"):
+        validate_bars([bar])

@@ -45,5 +45,7 @@ def test_maximum_trades_per_day(opening_bars):
     strategy = ORBStrategy(ORBConfig(maximum_trades_per_day=1))
     for bar in opening_bars:
         strategy.on_bar(bar, False)
-    assert strategy.on_bar(make_bar(45, 102, 103, 101, 102.5), False)
+    signal = strategy.on_bar(make_bar(45, 102, 103, 101, 102.5), False)
+    assert signal
+    strategy.on_signal_executed(signal)
     assert strategy.on_bar(make_bar(46, 102, 103, 97, 97.5), False) is None

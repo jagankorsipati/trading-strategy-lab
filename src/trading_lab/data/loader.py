@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
+import math
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -46,12 +48,14 @@ def validate_bars(bars: Iterable[MarketBar]) -> list[MarketBar]:
     if not result:
         raise ValueError("market data cannot be empty")
     previous = None
+    normalized: list[MarketBar] = []
     for bar in result:
         if bar.timestamp.tzinfo is None or bar.timestamp.utcoffset() is None:
             raise ValueError("market timestamps must be timezone-aware")
+        bar = replace(bar, timestamp=bar.timestamp.astimezone(EASTERN))
         values = (bar.open, bar.high, bar.low, bar.close, bar.volume)
-        if not all(pd.notna(value) for value in values):
-            raise ValueError("market data contains missing values")
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("market data contains missing or non-finite values")
         if min(bar.open, bar.high, bar.low, bar.close) <= 0:
             raise ValueError("OHLC prices must be positive")
         if bar.volume < 0:
@@ -64,4 +68,5 @@ def validate_bars(bars: Iterable[MarketBar]) -> list[MarketBar]:
             message = "duplicate" if bar.timestamp == previous else "incorrectly ordered"
             raise ValueError(f"{message} timestamp: {bar.timestamp}")
         previous = bar.timestamp
-    return result
+        normalized.append(bar)
+    return normalized
