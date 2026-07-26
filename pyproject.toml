@@ -9,6 +9,7 @@ description = "A transparent, testable quantitative strategy backtesting lab"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "alpaca-py>=0.42",
   "numpy>=1.26",
   "pandas>=2.2",
   "pandas-market-calendars>=5.0",

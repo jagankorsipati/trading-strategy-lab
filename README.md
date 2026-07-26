@@ -6,11 +6,14 @@ testable intraday backtesting foundation and a configurable QQQ Opening Range
 Breakout (ORB) strategy. It deliberately contains no frontend, broker connection,
 AI integration, database, paper trading, or live trading.
 
+Milestone 2 adds historical market-data providers and download caching. Alpaca is
+used only for historical equity bars; no trading or order API is present.
+
 ## Milestone 1 architecture and plan
 
 The package separates the domain into:
 
-- `data`: timezone-aware candle models and strict CSV validation.
+- `data`: provider abstractions, timezone-aware candles, caching, and validation.
 - `market`: replaceable exchange calendars and regular-session boundaries.
 - `strategies`: a reusable stateful strategy interface and the ORB implementation.
 - `risk`: position sizing and stop/take-profit rules.
@@ -23,6 +26,21 @@ This lets later strategies reuse execution, risk, portfolio, and reporting code.
 The milestone is implemented incrementally through domain/configuration models,
 data validation, strategy behavior, execution/accounting, metrics/reporting, and
 deterministic tests.
+
+Historical data follows the same source-independent pipeline:
+
+```text
+HistoricalDataProvider
+  -> normalized MarketBar objects
+  -> exchange-calendar filtering
+  -> BacktestEngine
+  -> TradingStrategy
+```
+
+`CsvHistoricalDataProvider` preserves local CSV workflows.
+`AlpacaHistoricalDataProvider` isolates the official `alpaca-py` SDK and currently
+supports US equity `1Min` bars. The backtesting engine and ORB strategy do not
+import or depend on Alpaca.
 
 ## How ORB works
 
@@ -112,6 +130,9 @@ Optional arguments expose the main ORB, execution, and capital assumptions; run
 with `--help` for details. Results are printed and written to
 `output/trades.csv` and `output/summary.json`.
 
+The current strategy contract is frozen and documented as
+[ORB-v1](docs/ORB-v1.md).
+
 Expected CSV columns:
 
 ```text
@@ -125,6 +146,53 @@ chronological and unique. OHLC fields cannot be missing, prices must be positive
 volume cannot be negative, `high` must be at least open/close/low, and `low` must
 be at most open/close/high. Input is converted to `America/New_York`, then filtered
 against the exchange calendar's regular session.
+
+## Downloading Alpaca historical data
+
+Install the project, then provide credentials through process environment
+variables only. The application does not load, print, cache, or write credentials.
+
+PowerShell:
+
+```powershell
+$env:ALPACA_API_KEY = "your-api-key"
+$env:ALPACA_SECRET_KEY = "your-secret-key"
+```
+
+macOS/Linux:
+
+```bash
+export ALPACA_API_KEY="your-api-key"
+export ALPACA_SECRET_KEY="your-secret-key"
+```
+
+Download the initial QQQ research dataset:
+
+```bash
+python scripts/download_data.py --symbol QQQ --start 2025-01-01 --end 2025-12-31 --timeframe 1Min
+```
+
+The inclusive request is cached by default at:
+
+```text
+data/historical/QQQ/1min/2025-01-01_2025-12-31.csv
+```
+
+Run ORB-v1 against it:
+
+```bash
+python scripts/run_backtest.py --data data/historical/QQQ/1min/2025-01-01_2025-12-31.csv
+```
+
+Cache files contain only `timestamp,open,high,low,close,volume`. An existing file
+whose named date interval fully covers a request is read and date-filtered instead
+of downloading the bars again. The cache is intentionally CSV-based and does not
+manufacture missing candles. `data/historical/`, `.env`, and `.env.*` are ignored
+by Git; `.env.example` may be committed safely if one is added later.
+
+Alpaca data availability and feed coverage depend on the account's market-data
+subscription. Provider/network errors are surfaced without including credential
+values.
 
 ## Important Disclaimer
 
