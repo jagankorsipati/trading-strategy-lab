@@ -6,6 +6,7 @@ from trading_lab.backtesting.metrics import calculate_metrics
 from trading_lab.backtesting.portfolio import Portfolio
 from trading_lab.config.settings import BacktestConfig
 from trading_lab.data.loader import validate_bars
+from trading_lab.market.calendar import MarketCalendar, NyseCalendar, TradingSession
 from trading_lab.models import Direction, ExitReason, MarketBar, Signal, Trade
 from trading_lab.strategies.base import TradingStrategy
 
@@ -22,9 +23,15 @@ class BacktestResult:
 
 
 class BacktestEngine:
-    def __init__(self, strategy: TradingStrategy, config: BacktestConfig) -> None:
+    def __init__(
+        self,
+        strategy: TradingStrategy,
+        config: BacktestConfig,
+        market_calendar: MarketCalendar | None = None,
+    ) -> None:
         self.strategy = strategy
         self.config = config
+        self.market_calendar = market_calendar or NyseCalendar()
 
     def _risk_exit(
         self, portfolio: Portfolio, bar: MarketBar
@@ -48,54 +55,40 @@ class BacktestEngine:
                 return ExitReason.TAKE_PROFIT, position.take_profit_price
         return None
 
-    def _close_for_risk_or_eod(
-        self, portfolio: Portfolio, bar: MarketBar
-    ) -> bool:
+    def _close_for_risk(self, portfolio: Portfolio, bar: MarketBar) -> bool:
         risk_exit = self._risk_exit(portfolio, bar)
-        if risk_exit is not None:
-            reason, reference = risk_exit
-        elif bar.timestamp.time().replace(tzinfo=None) >= self.config.end_of_day:
-            reason, reference = ExitReason.END_OF_DAY, bar.close
-        else:
+        if risk_exit is None:
             return False
+        reason, reference = risk_exit
         portfolio.close(bar, reference, reason)
         self.strategy.on_trade_closed(bar)
         return True
 
+    def _regular_session_bars(
+        self, bars: list[MarketBar]
+    ) -> list[tuple[MarketBar, TradingSession]]:
+        accepted: list[tuple[MarketBar, TradingSession]] = []
+        for bar in bars:
+            session = self.market_calendar.session(bar.timestamp.date())
+            if session is not None and session.contains(bar.timestamp):
+                accepted.append((bar, session))
+        if not accepted:
+            raise ValueError("market data contains no valid regular-session bars")
+        return accepted
+
     def run(self, bars: list[MarketBar]) -> BacktestResult:
         bars = validate_bars(bars)
+        session_bars = self._regular_session_bars(bars)
         self.strategy.initialize()
         portfolio = Portfolio(self.config)
         pending_signal: Signal | None = None
-        previous_bar: MarketBar | None = None
 
-        for bar in bars:
-            local_time = bar.timestamp.time().replace(tzinfo=None)
+        for index, (bar, session) in enumerate(session_bars):
             closed_this_bar = False
-
-            # Missing an explicit EOD bar must never carry exposure overnight.
-            crossed_session = (
-                previous_bar is not None
-                and bar.timestamp.date() != previous_bar.timestamp.date()
+            is_last_session_bar = (
+                index == len(session_bars) - 1
+                or session_bars[index + 1][1].session_date != session.session_date
             )
-            crossed_cutoff = (
-                previous_bar is not None
-                and bar.timestamp.date() == previous_bar.timestamp.date()
-                and previous_bar.timestamp.time().replace(tzinfo=None)
-                < self.config.end_of_day
-                < local_time
-            )
-            if crossed_session or crossed_cutoff:
-                pending_signal = None
-                if portfolio.position is not None:
-                    portfolio.close(
-                        previous_bar, previous_bar.close, ExitReason.END_OF_DAY
-                    )
-                    self.strategy.on_trade_closed(previous_bar)
-                    portfolio.equity_curve[-1] = (
-                        previous_bar.timestamp,
-                        portfolio.cash,
-                    )
 
             # A signal is based on a completed bar. It first becomes executable
             # at the following same-session bar's open.
@@ -103,7 +96,6 @@ class BacktestEngine:
             if pending_signal is not None:
                 executable = (
                     pending_signal.timestamp.date() == bar.timestamp.date()
-                    and local_time < self.config.end_of_day
                 )
                 if executable:
                     execution_signal = Signal(
@@ -118,7 +110,7 @@ class BacktestEngine:
                 pending_signal = None
 
             if portfolio.position is not None:
-                closed_this_bar = self._close_for_risk_or_eod(portfolio, bar)
+                closed_this_bar = self._close_for_risk(portfolio, bar)
 
             signal = self.strategy.on_bar(
                 bar,
@@ -126,16 +118,14 @@ class BacktestEngine:
                 or closed_this_bar
                 or pending_signal is not None,
             )
-            if signal is not None and local_time < self.config.end_of_day:
+            if signal is not None and not is_last_session_bar:
                 pending_signal = signal
+            if is_last_session_bar:
+                pending_signal = None
+                if portfolio.position is not None:
+                    portfolio.close(bar, bar.close, ExitReason.END_OF_DAY)
+                    self.strategy.on_trade_closed(bar)
             portfolio.mark(bar)
-            previous_bar = bar
-
-        # A truncated dataset must still never leave an overnight/open position.
-        if portfolio.position is not None:
-            last = bars[-1]
-            portfolio.close(last, last.close, ExitReason.END_OF_DAY)
-            portfolio.equity_curve[-1] = (last.timestamp, portfolio.cash)
 
         metrics = calculate_metrics(
             portfolio.trades, portfolio.equity_curve, self.config.starting_capital
@@ -144,8 +134,8 @@ class BacktestEngine:
             portfolio.trades,
             metrics,
             portfolio.equity_curve,
-            bars[0].timestamp,
-            bars[-1].timestamp,
+            session_bars[0][0].timestamp,
+            session_bars[-1][0].timestamp,
             portfolio.executions,
             portfolio.cash,
         )

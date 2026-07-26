@@ -41,8 +41,6 @@ class BacktestConfig:
     take_profit_pct: float = 0.01
     trading_fee: float = 0.0
     slippage_bps: float = 0.0
-    end_of_day: time = time(15, 59)
-
     def __post_init__(self) -> None:
         if self.starting_capital <= 0:
             raise ValueError("starting_capital must be positive")
