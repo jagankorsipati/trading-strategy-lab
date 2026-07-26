@@ -1,0 +1,17 @@
+{
+  "starting_capital": 10000.0,
+  "ending_capital": 10050.15,
+  "total_return": 0.005015,
+  "total_pnl": 50.15,
+  "total_trades": 1,
+  "winning_trades": 1,
+  "losing_trades": 0,
+  "win_rate": 1.0,
+  "average_winner": 50.15,
+  "average_loser": 0.0,
+  "profit_factor": null,
+  "maximum_drawdown": 0.0,
+  "average_trade_return": 0.01,
+  "largest_winning_trade": 50.15,
+  "largest_losing_trade": 0.0
+}
