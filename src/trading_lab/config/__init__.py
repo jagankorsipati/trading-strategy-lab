@@ -1,3 +1,3 @@
-from trading_lab.config.settings import BacktestConfig, ORBConfig
+from trading_lab.config.settings import BacktestConfig, ORBConfig, ReferenceORBConfig
 
-__all__ = ["BacktestConfig", "ORBConfig"]
+__all__ = ["BacktestConfig", "ORBConfig", "ReferenceORBConfig"]

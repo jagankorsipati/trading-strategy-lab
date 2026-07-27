@@ -34,6 +34,38 @@ class ORBConfig:
 
 
 @dataclass(frozen=True)
+class ReferenceORBConfig:
+    symbol: str = "QQQ"
+    market_open: time = time(9, 30)
+    candle_minutes: int = 5
+    account_value: float = 25_000.0
+    risk_fraction: float = 0.01
+    max_leverage: float = 4.0
+    minimum_risk_per_share: float = 0.05
+    reward_risk_multiple: float = 10.0
+    commission_per_share: float = 0.0005
+    maximum_trades_per_day: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.symbol.strip():
+            raise ValueError("symbol cannot be empty")
+        positive = (
+            self.candle_minutes,
+            self.account_value,
+            self.risk_fraction,
+            self.max_leverage,
+            self.minimum_risk_per_share,
+            self.reward_risk_multiple,
+        )
+        if any(value <= 0 for value in positive):
+            raise ValueError("reference ORB numeric settings must be positive")
+        if self.commission_per_share < 0:
+            raise ValueError("commission_per_share cannot be negative")
+        if self.maximum_trades_per_day != 1:
+            raise ValueError("Reference-ORB-v1 permits exactly one trade per day")
+
+
+@dataclass(frozen=True)
 class BacktestConfig:
     starting_capital: float = 10_000.0
     position_size: int = 10

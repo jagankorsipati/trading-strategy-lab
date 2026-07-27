@@ -133,6 +133,10 @@ with `--help` for details. Results are printed and written to
 The current strategy contract is frozen and documented as
 [ORB-v1](docs/ORB-v1.md).
 
+The separate public-repository interpretation is documented as
+[Reference-ORB-v1](docs/Reference-ORB-v1.md), with the untuned 2025 diagnostic in
+[QQQ 2025 Strategy Comparison](docs/QQQ-2025-Strategy-Comparison.md).
+
 Expected CSV columns:
 
 ```text

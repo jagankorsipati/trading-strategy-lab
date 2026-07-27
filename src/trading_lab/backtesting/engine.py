@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from trading_lab.backtesting.metrics import calculate_metrics
 from trading_lab.backtesting.portfolio import Portfolio
@@ -98,11 +98,10 @@ class BacktestEngine:
                     pending_signal.timestamp.date() == bar.timestamp.date()
                 )
                 if executable:
-                    execution_signal = Signal(
-                        pending_signal.symbol,
-                        bar.timestamp,
-                        pending_signal.direction,
-                        bar.open,
+                    execution_signal = replace(
+                        pending_signal,
+                        timestamp=bar.timestamp,
+                        reference_price=bar.open,
                     )
                     entered_this_bar = portfolio.open(execution_signal)
                     if entered_this_bar:

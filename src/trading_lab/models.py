@@ -38,11 +38,23 @@ class MarketBar:
 
 
 @dataclass(frozen=True)
+class RiskSizing:
+    account_value: float
+    risk_fraction: float
+    max_leverage: float
+    minimum_risk_per_share: float = 0.0
+    commission_per_share: float = 0.0
+
+
+@dataclass(frozen=True)
 class Signal:
     symbol: str
     timestamp: datetime
     direction: Direction
     reference_price: float
+    stop_price: float | None = None
+    reward_risk_multiple: float | None = None
+    risk_sizing: RiskSizing | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +79,7 @@ class Position:
     take_profit_price: float
     entry_fee: float
     entry_slippage: float
+    commission_per_share: float = 0.0
 
 
 @dataclass(frozen=True)

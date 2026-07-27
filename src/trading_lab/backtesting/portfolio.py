@@ -41,16 +41,64 @@ class Portfolio:
         price, slippage = self._fill_price(
             signal.reference_price, signal.direction, True
         )
-        quantity = self._sizer.size(price, self.cash)
-        required_buying_power = price * quantity + self.config.trading_fee
+        commission_per_share = (
+            signal.risk_sizing.commission_per_share
+            if signal.risk_sizing is not None
+            else 0.0
+        )
+        if signal.risk_sizing is not None:
+            if signal.stop_price is None:
+                raise ValueError("risk-sized signals require a stop price")
+            risk_per_share = abs(price - signal.stop_price)
+            if risk_per_share < signal.risk_sizing.minimum_risk_per_share:
+                return False
+            risk_quantity = int(
+                signal.risk_sizing.account_value
+                * signal.risk_sizing.risk_fraction
+                / risk_per_share
+            )
+            leverage_quantity = int(
+                signal.risk_sizing.max_leverage
+                * signal.risk_sizing.account_value
+                / price
+            )
+            available_equity = self.equity(signal.reference_price)
+            buying_power_quantity = int(
+                max(0.0, available_equity - self.config.trading_fee)
+                / (price + commission_per_share)
+            )
+            quantity = min(
+                risk_quantity,
+                leverage_quantity,
+                buying_power_quantity,
+            )
+            if quantity <= 0:
+                return False
+        else:
+            quantity = self._sizer.size(price, self.cash)
+        entry_fee = (
+            self.config.trading_fee + quantity * commission_per_share
+        )
+        required_buying_power = price * quantity + entry_fee
         if required_buying_power > self.equity(signal.reference_price):
             return False
-        stop, target = stop_and_target(
-            price,
-            signal.direction,
-            self.config.stop_loss_pct,
-            self.config.take_profit_pct,
-        )
+        if signal.stop_price is not None:
+            stop = signal.stop_price
+            if signal.reward_risk_multiple is None:
+                raise ValueError("custom stops require a reward/risk multiple")
+            risk_per_share = abs(price - stop)
+            target = (
+                price + signal.reward_risk_multiple * risk_per_share
+                if signal.direction == Direction.LONG
+                else price - signal.reward_risk_multiple * risk_per_share
+            )
+        else:
+            stop, target = stop_and_target(
+                price,
+                signal.direction,
+                self.config.stop_loss_pct,
+                self.config.take_profit_pct,
+            )
         self.position = Position(
             signal.symbol,
             signal.direction,
@@ -59,21 +107,22 @@ class Portfolio:
             quantity,
             stop,
             target,
-            self.config.trading_fee,
+            entry_fee,
             slippage * quantity,
+            commission_per_share,
         )
         notional = price * quantity
         if signal.direction == Direction.LONG:
-            self.cash -= notional + self.config.trading_fee
+            self.cash -= notional + entry_fee
         else:
-            self.cash += notional - self.config.trading_fee
+            self.cash += notional - entry_fee
         self.executions.append(
             Execution(
                 signal.timestamp,
                 price,
                 quantity,
                 signal.direction,
-                self.config.trading_fee,
+                entry_fee,
                 slippage * quantity,
                 True,
             )
@@ -94,11 +143,15 @@ class Portfolio:
             (exit_price - position.entry_price) * position.quantity * multiplier
         )
         exit_notional = exit_price * position.quantity
+        exit_fee = (
+            self.config.trading_fee
+            + position.quantity * position.commission_per_share
+        )
         if position.direction == Direction.LONG:
-            self.cash += exit_notional - self.config.trading_fee
+            self.cash += exit_notional - exit_fee
         else:
-            self.cash -= exit_notional + self.config.trading_fee
-        fees = position.entry_fee + self.config.trading_fee
+            self.cash -= exit_notional + exit_fee
+        fees = position.entry_fee + exit_fee
         trade = Trade(
             position.symbol,
             position.direction,
@@ -120,7 +173,7 @@ class Portfolio:
                 exit_price,
                 position.quantity,
                 position.direction,
-                self.config.trading_fee,
+                exit_fee,
                 exit_slippage * position.quantity,
                 False,
             )
