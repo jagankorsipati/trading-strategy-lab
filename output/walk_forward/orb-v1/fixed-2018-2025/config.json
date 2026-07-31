@@ -1,0 +1,15 @@
+{
+  "first_research_year": 2018,
+  "last_available_year": 2025,
+  "research_years": 3,
+  "validation_years": 1,
+  "test_years": 1,
+  "step_years": 1,
+  "slippage_bps": [
+    0.0,
+    2.0,
+    5.0
+  ],
+  "strategy_name": "orb-v1",
+  "mode": "Fixed-strategy rolling out-of-sample evaluation"
+}

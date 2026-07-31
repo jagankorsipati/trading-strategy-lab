@@ -137,6 +137,12 @@ The separate public-repository interpretation is documented as
 [Reference-ORB-v1](docs/Reference-ORB-v1.md), with the untuned 2025 diagnostic in
 [QQQ 2025 Strategy Comparison](docs/QQQ-2025-Strategy-Comparison.md).
 
+Both ORB-v1 and Reference-ORB-v1 are permanently frozen research baselines under
+project version `0.1.0`. Their release policy, assumptions, and results are in
+[Frozen Research Baselines](docs/BASELINES.md). Any rule or default change must
+use a new strategy/version name. The annotated tag
+`v0.1.0-research-foundation` identifies the original frozen foundation commit.
+
 Expected CSV columns:
 
 ```text
@@ -197,6 +203,33 @@ by Git; `.env.example` may be committed safely if one is added later.
 Alpaca data availability and feed coverage depend on the account's market-data
 subscription. Provider/network errors are surfaced without including credential
 values.
+
+## Walk-forward research
+
+Milestone 3A supports configurable chronological research, validation, and
+out-of-sample windows. In the current **Fixed-strategy rolling out-of-sample
+evaluation** mode, the frozen strategies run unchanged in every period. No model
+is trained, no parameters are selected, and research or validation performance
+does not alter later runs.
+
+Run the illustrative 2018–2025 windows with all three friction scenarios:
+
+```bash
+python scripts/run_walk_forward.py \
+  --data data/historical/QQQ/1min \
+  --strategy orb-v1 \
+  --research-years 3 --validation-years 1 --test-years 1 \
+  --step-years 1 --slippage-bps 0 2 5
+```
+
+Use `--strategy reference-orb-v1` for the second frozen baseline. Baseline
+strategy parameters are intentionally absent from the CLI. Reports are written
+under `output/walk_forward/<strategy>/<run-id>/` as JSON, CSV, and Markdown.
+
+See [Walk-forward Research](docs/WALK-FORWARD-RESEARCH.md) for chronology rules,
+leakage prevention, interpretation, and limitations. Walk-forward evaluation
+does not resolve OHLC sequencing ambiguity, missing market data, fill-model risk,
+or research overfitting, and it does not demonstrate future profitability.
 
 ## Important Disclaimer
 
