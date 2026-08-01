@@ -10,13 +10,15 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "alpaca-py>=0.42",
+  "fastapi>=0.115",
   "numpy>=1.26",
   "pandas>=2.2",
   "pandas-market-calendars>=5.0",
+  "uvicorn[standard]>=0.34",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["httpx>=0.28", "pytest>=8.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

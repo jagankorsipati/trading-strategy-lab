@@ -9,6 +9,13 @@ AI integration, database, paper trading, or live trading.
 Milestone 2 adds historical market-data providers and download caching. Alpaca is
 used only for historical equity bars; no trading or order API is present.
 
+Milestone 4A adds a local, read-only Quant Research Dashboard. A FastAPI service
+loads allowlisted artifacts from `output/` and `docs/`; a React/TypeScript UI
+presents frozen strategies, backtests, trades, walk-forward studies, execution
+sensitivity, comparisons, and Markdown reports. It does not submit orders,
+modify strategies, expose credentials, or access the historical-data cache.
+See [docs/DASHBOARD.md](docs/DASHBOARD.md) for setup and architecture.
+
 ## Milestone 1 architecture and plan
 
 The package separates the domain into:

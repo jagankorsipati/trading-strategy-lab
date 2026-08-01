@@ -1,5 +1,16 @@
 # Changelog
 
+## Milestone 4A
+
+- Added a typed, read-only FastAPI research-artifact API under `/api/v1`.
+- Added a responsive React, TypeScript, Vite, Tailwind CSS, and Recharts dashboard.
+- Added views for frozen strategies, backtests, performance, trades,
+  walk-forward evidence, execution sensitivity, comparisons, and reports.
+- Added provenance, explicit unavailable-data states, defensive artifact parsing,
+  narrow local CORS, and Markdown rendering without raw HTML execution.
+- Added deterministic API and frontend behavior tests without changing frozen
+  strategy implementations or baseline result artifacts.
+
 ## Milestone 3B
 
 - Added typed, deterministic execution-model infrastructure for fixed-bps,

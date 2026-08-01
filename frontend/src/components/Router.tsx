@@ -1,0 +1,3 @@
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
+export function usePath(){const [path,setPath]=useState(()=>window.location.pathname);useEffect(()=>{const update=()=>setPath(window.location.pathname);window.addEventListener('popstate',update);return()=>window.removeEventListener('popstate',update)},[]);return path}
+export function RouterLink({to,children,className}:{to:string;children:ReactNode;className?:string}){function navigate(event:MouseEvent<HTMLAnchorElement>){if(event.button||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();window.history.pushState({},'',to);window.dispatchEvent(new PopStateEvent('popstate'))}return <a href={to} className={className} onClick={navigate}>{children}</a>}
