@@ -66,6 +66,14 @@ class Execution:
     fee: float
     slippage: float
     is_entry: bool
+    reference_price: float | None = None
+    spread_cost: float = 0.0
+    impact_cost: float = 0.0
+    latency_cost: float = 0.0
+    requested_quantity: int | None = None
+    unfilled_quantity: int = 0
+    status: str = "fully_filled"
+    explanation: str = ""
 
 
 @dataclass

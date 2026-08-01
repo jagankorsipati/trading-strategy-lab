@@ -1,6 +1,19 @@
 from __future__ import annotations
 
 from trading_lab.config.settings import BacktestConfig
+from trading_lab.execution import (
+    ExecutionContext,
+    ExecutionModel,
+    ExecutionResult,
+    ExecutionStatus,
+    FixedBpsExecutionConfig,
+    FixedBpsExecutionModel,
+    OrderIntent,
+    OrderSide,
+    OrderType,
+    RejectionReason,
+)
+from trading_lab.market.calendar import TradingSession
 from trading_lab.models import (
     Direction,
     Execution,
@@ -17,34 +30,122 @@ from trading_lab.risk.rules import stop_and_target
 class Portfolio:
     """Tracks actual cash plus long assets or short liabilities."""
 
-    def __init__(self, config: BacktestConfig) -> None:
+    def __init__(
+        self,
+        config: BacktestConfig,
+        execution_model: ExecutionModel | None = None,
+    ) -> None:
         self.config = config
         self.cash = config.starting_capital
         self.position: Position | None = None
         self.trades: list[Trade] = []
         self.executions: list[Execution] = []
+        self.order_results: list[ExecutionResult] = []
+        self.order_intents: list[OrderIntent | None] = []
         self.equity_curve: list[tuple[object, float]] = []
         self._sizer = FixedQuantitySizer(config.position_size)
+        self.execution_model = execution_model or FixedBpsExecutionModel(
+            FixedBpsExecutionConfig(config.slippage_bps)
+        )
 
-    def _fill_price(
-        self, reference: float, direction: Direction, is_entry: bool
-    ) -> tuple[float, float]:
-        adverse_sign = 1 if direction == Direction.LONG else -1
-        if not is_entry:
-            adverse_sign *= -1
-        slippage = reference * self.config.slippage_bps / 10_000
-        return reference + adverse_sign * slippage, slippage
+    @staticmethod
+    def _side(direction: Direction, is_entry: bool) -> OrderSide:
+        if direction == Direction.LONG:
+            return OrderSide.BUY if is_entry else OrderSide.SELL
+        return OrderSide.SELL if is_entry else OrderSide.BUY
 
-    def open(self, signal: Signal) -> bool:
+    @staticmethod
+    def _fallback_bar(signal: Signal) -> MarketBar:
+        price = signal.reference_price
+        return MarketBar(signal.timestamp, price, price, price, price, 1_000_000_000)
+
+    def _intent(
+        self,
+        *,
+        signal: Signal,
+        quantity: int,
+        is_entry: bool,
+        reference_price: float,
+        exit_reason: ExitReason | None,
+        order_level: float | None,
+        commission_per_share: float,
+    ) -> OrderIntent:
+        order_type = self.execution_model.order_type(
+            is_entry=is_entry, exit_reason=exit_reason
+        )
+        return OrderIntent(
+            timestamp=signal.timestamp,
+            side=self._side(signal.direction, is_entry),
+            order_type=order_type,
+            requested_quantity=quantity,
+            reference_price=reference_price,
+            limit_price=order_level if order_type == OrderType.LIMIT else None,
+            stop_price=order_level if order_type == OrderType.STOP else None,
+            is_entry=is_entry,
+            commission_per_share=commission_per_share,
+            fixed_commission=self.config.trading_fee,
+        )
+
+    def _append_execution(
+        self, signal: Signal, result: ExecutionResult, *, is_entry: bool
+    ) -> None:
+        fill = result.fill
+        if fill is None:
+            return
+        costs = fill.costs
+        self.executions.append(
+            Execution(
+                signal.timestamp,
+                fill.price,
+                fill.quantity,
+                signal.direction,
+                costs.commission,
+                costs.fixed_slippage,
+                is_entry,
+                reference_price=fill.reference_price,
+                spread_cost=costs.spread,
+                impact_cost=costs.market_impact,
+                latency_cost=costs.latency,
+                requested_quantity=result.requested_quantity,
+                unfilled_quantity=result.unfilled_quantity,
+                status=result.status.value,
+                explanation=result.explanation,
+            )
+        )
+
+    def open(
+        self,
+        signal: Signal,
+        bar: MarketBar | None = None,
+        session: TradingSession | None = None,
+        *,
+        order_reference_price: float | None = None,
+        delayed_bars: int = 0,
+    ) -> bool:
         if self.position is not None:
             raise RuntimeError("cannot open a second position")
-        price, slippage = self._fill_price(
-            signal.reference_price, signal.direction, True
-        )
+        execution_bar = bar or self._fallback_bar(signal)
+        context = ExecutionContext(execution_bar, session, delayed_bars=delayed_bars)
         commission_per_share = (
             signal.risk_sizing.commission_per_share
             if signal.risk_sizing is not None
             else 0.0
+        )
+        level = order_reference_price or signal.reference_price
+        provisional_intent = self._intent(
+            signal=signal,
+            quantity=1,
+            is_entry=True,
+            reference_price=signal.reference_price,
+            exit_reason=None,
+            order_level=level,
+            commission_per_share=commission_per_share,
+        )
+        provisional = self.execution_model.execute(provisional_intent, context)
+        price = (
+            provisional.fill.price
+            if provisional.fill is not None
+            else signal.reference_price
         )
         if signal.risk_sizing is not None:
             if signal.stop_price is None:
@@ -76,11 +177,35 @@ class Portfolio:
                 return False
         else:
             quantity = self._sizer.size(price, self.cash)
-        entry_fee = (
-            self.config.trading_fee + quantity * commission_per_share
+        intent = self._intent(
+            signal=signal,
+            quantity=quantity,
+            is_entry=True,
+            reference_price=signal.reference_price,
+            exit_reason=None,
+            order_level=level,
+            commission_per_share=commission_per_share,
         )
+        result = self.execution_model.execute(intent, context)
+        self.order_intents.append(intent)
+        self.order_results.append(result)
+        if result.fill is None:
+            return False
+        fill = result.fill
+        quantity = fill.quantity
+        price = fill.price
+        entry_fee = fill.costs.commission
         required_buying_power = price * quantity + entry_fee
         if required_buying_power > self.equity(signal.reference_price):
+            self.order_results[-1] = ExecutionResult(
+                ExecutionStatus.REJECTED,
+                result.requested_quantity,
+                0,
+                result.requested_quantity,
+                None,
+                RejectionReason.BUYING_POWER,
+                "insufficient portfolio buying power",
+            )
             return False
         if signal.stop_price is not None:
             stop = signal.stop_price
@@ -108,7 +233,7 @@ class Portfolio:
             stop,
             target,
             entry_fee,
-            slippage * quantity,
+            fill.costs.price_cost,
             commission_per_share,
         )
         notional = price * quantity
@@ -116,37 +241,63 @@ class Portfolio:
             self.cash -= notional + entry_fee
         else:
             self.cash += notional - entry_fee
-        self.executions.append(
-            Execution(
-                signal.timestamp,
-                price,
-                quantity,
-                signal.direction,
-                entry_fee,
-                slippage * quantity,
-                True,
-            )
-        )
+        self._append_execution(signal, result, is_entry=True)
         return True
 
+    def reject_pending(self, reason: RejectionReason, explanation: str) -> None:
+        quantity = self.config.position_size
+        self.order_intents.append(None)
+        self.order_results.append(
+            ExecutionResult(
+                ExecutionStatus.REJECTED,
+                quantity,
+                0,
+                quantity,
+                None,
+                reason,
+                explanation,
+            )
+        )
+
     def close(
-        self, bar: MarketBar, reference_price: float, reason: ExitReason
-    ) -> Trade:
+        self,
+        bar: MarketBar,
+        reference_price: float,
+        reason: ExitReason,
+        session: TradingSession | None = None,
+    ) -> Trade | None:
         if self.position is None:
             raise RuntimeError("no position to close")
         position = self.position
-        exit_price, exit_slippage = self._fill_price(
-            reference_price, position.direction, False
+        signal = Signal(
+            position.symbol,
+            bar.timestamp,
+            position.direction,
+            reference_price,
         )
+        context = ExecutionContext(bar, session, exit_reason=reason)
+        intent = self._intent(
+            signal=signal,
+            quantity=position.quantity,
+            is_entry=False,
+            reference_price=reference_price,
+            exit_reason=reason,
+            order_level=reference_price,
+            commission_per_share=position.commission_per_share,
+        )
+        result = self.execution_model.execute(intent, context)
+        self.order_intents.append(intent)
+        self.order_results.append(result)
+        if result.fill is None:
+            return None
+        fill = result.fill
+        exit_price = fill.price
         multiplier = 1 if position.direction == Direction.LONG else -1
         gross_pnl = (
             (exit_price - position.entry_price) * position.quantity * multiplier
         )
         exit_notional = exit_price * position.quantity
-        exit_fee = (
-            self.config.trading_fee
-            + position.quantity * position.commission_per_share
-        )
+        exit_fee = fill.costs.commission
         if position.direction == Direction.LONG:
             self.cash += exit_notional - exit_fee
         else:
@@ -163,21 +314,11 @@ class Portfolio:
             position.stop_price,
             position.take_profit_price,
             fees,
-            position.entry_slippage + exit_slippage * position.quantity,
+            position.entry_slippage + fill.costs.price_cost,
             gross_pnl - fees,
             reason,
         )
-        self.executions.append(
-            Execution(
-                bar.timestamp,
-                exit_price,
-                position.quantity,
-                position.direction,
-                exit_fee,
-                exit_slippage * position.quantity,
-                False,
-            )
-        )
+        self._append_execution(signal, result, is_entry=False)
         self.trades.append(trade)
         self.position = None
         return trade

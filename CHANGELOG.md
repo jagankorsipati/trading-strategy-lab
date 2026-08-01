@@ -1,5 +1,17 @@
 # Changelog
 
+## Milestone 3B
+
+- Added typed, deterministic execution-model infrastructure for fixed-bps,
+  spread-proxy, OHLCV volume-participation, conservative limit/stop, and
+  historical bar-latency assumptions.
+- Added dependency-injected engine integration with backward-compatible
+  fixed-bps defaults and fill-level cost breakdowns.
+- Added execution-sensitivity reports with full, partial, unfilled, and rejected
+  order accounting.
+- Preserved frozen strategy sources, defaults, calendar rules, stop-first
+  ambiguity handling, portfolio cash semantics, and existing research results.
+
 ## Milestone 3A
 
 - Added configurable, typed, chronological walk-forward windows.

@@ -1,0 +1,54 @@
+{
+  "strategy": "orb-v1",
+  "mode": "execution sensitivity analysis",
+  "assumptions": {
+    "fixed-0bps": {
+      "slippage_bps": 0
+    },
+    "fixed-2bps": {
+      "slippage_bps": 2
+    },
+    "fixed-5bps": {
+      "slippage_bps": 5
+    },
+    "constant-spread": {
+      "spread_proxy_bps": 4.0,
+      "cost_per_side": "half spread"
+    },
+    "time-of-day-spread": {
+      "open_spread_bps": 6.0,
+      "middle_spread_bps": 2.0,
+      "close_spread_bps": 4.0,
+      "open_close_windows_minutes": 30
+    },
+    "volume-aware": {
+      "maximum_participation_rate": 0.001,
+      "minimum_bar_volume": 1000,
+      "impact_formula": "coefficient_bps * filled_quantity / bar_volume",
+      "impact_coefficient_bps": 100.0,
+      "partial_entries": true
+    },
+    "one-bar-latency": {
+      "additional_delay_bars": 1,
+      "adverse_bps_per_delayed_bar": 1.0
+    },
+    "conservative-orders": {
+      "entry_interpretation": "hypothetical stop at completed signal-bar close; immediate-or-cancel per execution bar",
+      "stop_policy": "trade-through required; touch-only is no fill",
+      "target_policy": "trade-through required; touch-only is no fill"
+    },
+    "study_period": {
+      "start": "2018-01-01",
+      "end": "2025-12-31",
+      "source_fields": [
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume"
+      ],
+      "quote_data_available": false
+    }
+  }
+}

@@ -6,6 +6,7 @@ from trading_lab.backtesting.metrics import calculate_metrics
 from trading_lab.backtesting.portfolio import Portfolio
 from trading_lab.config.settings import BacktestConfig
 from trading_lab.data.loader import validate_bars
+from trading_lab.execution import ExecutionModel, RejectionReason
 from trading_lab.market.calendar import MarketCalendar, NyseCalendar, TradingSession
 from trading_lab.models import Direction, ExitReason, MarketBar, Signal, Trade
 from trading_lab.strategies.base import TradingStrategy
@@ -19,6 +20,8 @@ class BacktestResult:
     start_timestamp: object
     end_timestamp: object
     executions: list[object]
+    order_intents: list[object]
+    order_results: list[object]
     final_cash: float
 
 
@@ -28,10 +31,12 @@ class BacktestEngine:
         strategy: TradingStrategy,
         config: BacktestConfig,
         market_calendar: MarketCalendar | None = None,
+        execution_model: ExecutionModel | None = None,
     ) -> None:
         self.strategy = strategy
         self.config = config
         self.market_calendar = market_calendar or NyseCalendar()
+        self.execution_model = execution_model
 
     def _risk_exit(
         self, portfolio: Portfolio, bar: MarketBar
@@ -55,14 +60,18 @@ class BacktestEngine:
                 return ExitReason.TAKE_PROFIT, position.take_profit_price
         return None
 
-    def _close_for_risk(self, portfolio: Portfolio, bar: MarketBar) -> bool:
+    def _close_for_risk(
+        self, portfolio: Portfolio, bar: MarketBar, session: TradingSession
+    ) -> bool:
         risk_exit = self._risk_exit(portfolio, bar)
         if risk_exit is None:
             return False
         reason, reference = risk_exit
-        portfolio.close(bar, reference, reason)
-        self.strategy.on_trade_closed(bar)
-        return True
+        trade = portfolio.close(bar, reference, reason, session)
+        if trade is not None:
+            self.strategy.on_trade_closed(bar)
+            return True
+        return False
 
     def _regular_session_bars(
         self, bars: list[MarketBar]
@@ -80,8 +89,9 @@ class BacktestEngine:
         bars = validate_bars(bars)
         session_bars = self._regular_session_bars(bars)
         self.strategy.initialize()
-        portfolio = Portfolio(self.config)
+        portfolio = Portfolio(self.config, self.execution_model)
         pending_signal: Signal | None = None
+        pending_delay = 0
 
         for index, (bar, session) in enumerate(session_bars):
             closed_this_bar = False
@@ -97,19 +107,34 @@ class BacktestEngine:
                 executable = (
                     pending_signal.timestamp.date() == bar.timestamp.date()
                 )
-                if executable:
+                if executable and pending_delay > 0:
+                    pending_delay -= 1
+                elif executable:
                     execution_signal = replace(
                         pending_signal,
                         timestamp=bar.timestamp,
                         reference_price=bar.open,
                     )
-                    entered_this_bar = portfolio.open(execution_signal)
+                    entered_this_bar = portfolio.open(
+                        execution_signal,
+                        bar,
+                        session,
+                        order_reference_price=pending_signal.reference_price,
+                        delayed_bars=(
+                            self.execution_model.entry_delay_bars
+                            if self.execution_model is not None
+                            else 0
+                        ),
+                    )
                     if entered_this_bar:
                         self.strategy.on_signal_executed(execution_signal)
-                pending_signal = None
+                    pending_signal = None
+                elif not executable:
+                    pending_signal = None
+                    pending_delay = 0
 
             if portfolio.position is not None:
-                closed_this_bar = self._close_for_risk(portfolio, bar)
+                closed_this_bar = self._close_for_risk(portfolio, bar, session)
 
             signal = self.strategy.on_bar(
                 bar,
@@ -119,10 +144,27 @@ class BacktestEngine:
             )
             if signal is not None and not is_last_session_bar:
                 pending_signal = signal
+                pending_delay = (
+                    self.execution_model.entry_delay_bars
+                    if self.execution_model is not None
+                    else 0
+                )
             if is_last_session_bar:
+                if pending_signal is not None:
+                    portfolio.reject_pending(
+                        RejectionReason.SESSION_ENDED,
+                        "delayed entry would execute after the regular session",
+                    )
                 pending_signal = None
+                pending_delay = 0
                 if portfolio.position is not None:
-                    portfolio.close(bar, bar.close, ExitReason.END_OF_DAY)
+                    trade = portfolio.close(
+                        bar, bar.close, ExitReason.END_OF_DAY, session
+                    )
+                    if trade is None:
+                        raise RuntimeError(
+                            "execution model rejected mandatory end-of-day liquidation"
+                        )
                     self.strategy.on_trade_closed(bar)
             portfolio.mark(bar)
 
@@ -136,5 +178,7 @@ class BacktestEngine:
             session_bars[0][0].timestamp,
             session_bars[-1][0].timestamp,
             portfolio.executions,
+            portfolio.order_intents,
+            portfolio.order_results,
             portfolio.cash,
         )

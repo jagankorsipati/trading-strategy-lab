@@ -23,7 +23,7 @@ QualityLookup = Callable[[DateRange], DataQualityStatus]
 SUPPORTED_STRATEGIES = ("orb-v1", "reference-orb-v1")
 
 
-def _fixed_components(strategy_name: str, slippage_bps: float):
+def fixed_strategy_components(strategy_name: str, slippage_bps: float):
     if strategy_name == "orb-v1":
         return ORBStrategy(ORBConfig()), BacktestConfig(
             starting_capital=10_000,
@@ -73,7 +73,7 @@ def run_fixed_strategy_walk_forward(
                     and session.contains(bar.timestamp)
                     for bar in period_bars
                 )
-                strategy, backtest_config = _fixed_components(strategy_name, friction_bps)
+                strategy, backtest_config = fixed_strategy_components(strategy_name, friction_bps)
                 backtest = BacktestEngine(
                     strategy, backtest_config, market_calendar
                 ).run(period_bars)

@@ -231,6 +231,32 @@ leakage prevention, interpretation, and limitations. Walk-forward evaluation
 does not resolve OHLC sequencing ambiguity, missing market data, fill-model risk,
 or research overfitting, and it does not demonstrate future profitability.
 
+## Execution-model research
+
+Milestone 3B adds dependency-injected historical execution models for fixed-bps
+slippage, assumed spreads, OHLCV participation and impact, conservative stop and
+limit orders, and deterministic bar latency. Existing callers retain the exact
+fixed-bps behavior by default.
+
+Run all documented sensitivity scenarios:
+
+```bash
+python scripts/run_execution_study.py \
+  --data data/historical/QQQ/1min \
+  --strategy orb-v1 \
+  --start 2018-01-01 --end 2025-12-31 \
+  --execution-model all
+```
+
+Use `--strategy reference-orb-v1` for the second frozen baseline. Reports are
+written under `output/execution_studies/<strategy>/<run-id>/`. The CLI exposes
+execution assumptions but no frozen strategy parameters.
+
+See [Execution-model Research](docs/EXECUTION-MODEL-RESEARCH.md) for formulas,
+scenario results, fill counts, costs, and limitations. The cache contains OHLCV,
+not quotes or order-book events; none of these models should be interpreted as a
+reconstruction of real broker fills.
+
 ## Important Disclaimer
 
 This project is for research and education only. Historical performance does not
